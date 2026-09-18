@@ -119,7 +119,7 @@ else:
             st.session_state.order_placed = True
             
             # 2. Build WhatsApp redirect URL for the owner (replace with actual restaurant phone number e.g. 15551234567)
-            restaurant_whatsapp = "15550000000" 
+            restaurant_whatsapp = "9425391363" 
             wa_url = generate_whatsapp_url(restaurant_whatsapp, table_id, st.session_state.cart, new_id)
             
             st.success("Order saved to database!")
