@@ -55,7 +55,7 @@ def parse_voice_order(spoken_text: str) -> list:
         Extract the food items and quantities from the user's speech and map them to our menu.
         
         Available Menu Items: {flat_menu}
-        User Spoken Text: "{spoken_str}"
+        User Spoken Text: "{spoken_text}"
         
         Rules:
         - Match items to the closest available menu item, ignoring case.
@@ -79,7 +79,7 @@ def parse_voice_order(spoken_text: str) -> list:
         
     except Exception as e:
         print(f"Structured output error: {e}")
-        return ['Paneer Tikka']
+        return [{"item": "Paneer Tikka", "quantity": 1}]
 
 
 
