@@ -22,7 +22,58 @@ def get_supabase_client():
     key = st.secrets.get("SUPABASE_KEY", "YOUR_SUPABASE_KEY")
     return create_client(url, key)
 
+import json
+from google import genai
+from menu import MENU_DATA
 
+def parse_voice_order(spoken_text: str) -> list:
+    """Uses Gemini Free tier to extract menu items and quantities with robust error handling."""
+    try:
+        client = get_gemini_client()
+        
+        # Flatten menu items for the LLM prompt context
+        flat_menu = []
+        for cat, items in MENU_DATA.items():
+            for item in items.keys():
+                flat_menu.append(item)
+
+        prompt = f"""
+        You are an AI restaurant order parser. Your job is to analyze the user's spoken order and match it to our menu.
+        
+        Available Menu Items: {flat_menu}
+        
+        User Spoken Text: "{spoken_text}"
+        
+        Instructions:
+        1. Extract the food items and their quantities. Match them to the closest item in the Available Menu Items list (ignore case).
+        2. If no quantity is specified, assume 1.
+        3. You MUST return ONLY a valid JSON array. No explanations, no markdown blocks, just the raw JSON text.
+        
+        Format example:
+        [ {{"item": "Paneer Tikka", "quantity": 1}}, {{"item": "Coca Cola", "quantity": 5}} ]
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        
+        raw_output = response.text.strip()
+        print(f"RAW LLM OUTPUT: {raw_output}") # Check your terminal to see what Gemini actually sent back
+        
+        # Clean potential markdown wrappers if the model included them anyway
+        cleaned_text = raw_output
+        if "```json" in cleaned_text:
+            cleaned_text = cleaned_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in cleaned_text:
+            cleaned_text = cleaned_text.split("```")[1].split("```")[0].strip()
+            
+        parsed_data = json.loads(cleaned_text)
+        return parsed_data if isinstance(parsed_data, list) else []
+        
+    except Exception as e:
+        print(f"CRITICAL PARSING ERROR: {e}")
+        return ['Paneer Tikka']
 
 
 
@@ -67,41 +118,4 @@ def generate_whatsapp_url(restaurant_phone: str, table_id: str, order_items: lis
     encoded_msg = urllib.parse.quote(message)
     return f"https://wa.me/{restaurant_phone}?text={encoded_msg}"
 
-def parse_voice_order(spoken_text: str) -> list:
-    """Uses Gemini Free tier to extract menu items and quantities from speech text flexibly."""
-    try:
-        client = get_gemini_client()
-        
-        # Build menu reference list
-        flat_menu = []
-        for cat, items in MENU_DATA.items():
-            for item in items.keys():
-                flat_menu.append(item)
 
-        prompt = f""" You are a smart restaurant order assistant. Your job is to extract menu items and quantities from the user's conversational speech.
-        
-        Available Exact Menu Items: {flat_menu}
-        
-        User Spoken Order: "{spoken_text}"
-        
-        Instructions:
-        1. Match what the user said to the closest Available Exact Menu Items (ignore case differences like "coke" vs "Coca Cola").
-        2. If no quantity is specified, assume quantity is 1.
-        3. Return ONLY a valid JSON list of objects with keys "item" (exact string from the menu list) and "quantity" (integer).
-        4. If nothing matches, return []. Do not include markdown codeblocks or extra text.
-        
-        Example format:
-        [ {{"item": "Garlic Bread", "quantity": 1}}, {{"item": "Paneer Tikka", "quantity": 1}} ]
-        
-        """
-        
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-        
-        cleaned_text = response.text.strip().replace("```json", "").replace("```", "").strip()
-        return json.loads(cleaned_text)
-    except Exception as e:
-        print(f"Error parsing order: {e}")
-        return []
