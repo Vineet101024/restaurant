@@ -26,53 +26,59 @@ import json
 from google import genai
 from menu import MENU_DATA
 
+
+import json
+from google import genai
+from google.genai import types
+from pydantic import BaseModel
+from menu import MENU_DATA
+
+# 1. Define the exact schema you want back
+class OrderItem(BaseModel):
+    item: str
+    quantity: int
+
+class OrderList(BaseModel):
+    items: list[OrderItem]
+
 def parse_voice_order(spoken_text: str) -> list:
-    """Uses Gemini Free tier to extract menu items and quantities with robust error handling."""
+    """Uses Gemini Structured Outputs to guarantee a valid, typed JSON response."""
     try:
         client = get_gemini_client()
         
-        # Flatten menu items for the LLM prompt context
         flat_menu = []
         for cat, items in MENU_DATA.items():
             for item in items.keys():
                 flat_menu.append(item)
 
         prompt = f"""
-        You are an AI restaurant order parser. Your job is to analyze the user's spoken order and match it to our menu.
+        Extract the food items and quantities from the user's speech and map them to our menu.
         
         Available Menu Items: {flat_menu}
+        User Spoken Text: "{spoken_str}"
         
-        User Spoken Text: "{spoken_text}"
-        
-        Instructions:
-        1. Extract the food items and their quantities. Match them to the closest item in the Available Menu Items list (ignore case).
-        2. If no quantity is specified, assume 1.
-        3. You MUST return ONLY a valid JSON array. No explanations, no markdown blocks, just the raw JSON text.
-        
-        Format example:
-        [ {{"item": "Paneer Tikka", "quantity": 1}}, {{"item": "Coca Cola", "quantity": 5}} ]
+        Rules:
+        - Match items to the closest available menu item, ignoring case.
+        - Default quantity to 1 if not specified.
         """
         
+        # 2. Call Gemini with schema enforcement
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=prompt
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=OrderList,  # Forces compliance with the Pydantic model
+                temperature=0.1
+            ),
         )
         
-        raw_output = response.text.strip()
-        print(f"RAW LLM OUTPUT: {raw_output}") # Check your terminal to see what Gemini actually sent back
-        
-        # Clean potential markdown wrappers if the model included them anyway
-        cleaned_text = raw_output
-        if "```json" in cleaned_text:
-            cleaned_text = cleaned_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in cleaned_text:
-            cleaned_text = cleaned_text.split("```")[1].split("```")[0].strip()
-            
-        parsed_data = json.loads(cleaned_text)
-        return parsed_data if isinstance(parsed_data, list) else []
+        # 3. Parse the guaranteed valid JSON
+        data = json.loads(response.text)
+        return data.get("items", [])
         
     except Exception as e:
-        print(f"CRITICAL PARSING ERROR: {e}")
+        print(f"Structured output error: {e}")
         return ['Paneer Tikka']
 
 
