@@ -23,38 +23,7 @@ def get_supabase_client():
     return create_client(url, key)
 
 
-def parse_voice_order(spoken_text: str) -> list:
-    """Uses Gemini Free tier to extract menu items and quantities from speech text."""
-    try:
-        client = get_gemini_client()
-        
-        # Flatten menu items for the LLM prompt context
-        flat_menu = []
-        for cat, items in MENU_DATA.items():
-            for item in items.keys():
-                flat_menu.append(item)
 
-        prompt = f"""
-        You are a restaurant order parser. Match the user's spoken order text strictly to the available menu items.
-        Available Menu Items: {flat_menu}
-        
-        User Spoken Order: "{spoken_text}"
-        
-        Return ONLY a JSON list of objects with keys "item" and "quantity". 
-        If an item mentioned is not on the menu, ignore it. Do not include markdown codeblocks. Example format:
-        [ {{"item": "Margherita Pizza", "quantity": 2}}, {{"item": "Coca Cola", "quantity": 1}} ]
-        """
-        
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-        
-        cleaned_text = response.text.strip().replace("```json", "").replace("```", "").strip()
-        return json.loads(cleaned_text)
-    except Exception as e:
-        print(f"Error parsing order: {e}")
-        return []
 
 
 def save_order_to_db(table_id: str, order_items: list) -> str:
@@ -97,3 +66,42 @@ def generate_whatsapp_url(restaurant_phone: str, table_id: str, order_items: lis
     import urllib.parse
     encoded_msg = urllib.parse.quote(message)
     return f"https://wa.me/{restaurant_phone}?text={encoded_msg}"
+
+def parse_voice_order(spoken_text: str) -> list:
+    """Uses Gemini Free tier to extract menu items and quantities from speech text flexibly."""
+    try:
+        client = get_gemini_client()
+        
+        # Build menu reference list
+        flat_menu = []
+        for cat, items in MENU_DATA.items():
+            for item in items.keys():
+                flat_menu.append(item)
+
+        prompt = f""" You are a smart restaurant order assistant. Your job is to extract menu items and quantities from the user's conversational speech.
+        
+        Available Exact Menu Items: {flat_menu}
+        
+        User Spoken Order: "{spoken_text}"
+        
+        Instructions:
+        1. Match what the user said to the closest Available Exact Menu Items (ignore case differences like "coke" vs "Coca Cola").
+        2. If no quantity is specified, assume quantity is 1.
+        3. Return ONLY a valid JSON list of objects with keys "item" (exact string from the menu list) and "quantity" (integer).
+        4. If nothing matches, return []. Do not include markdown codeblocks or extra text.
+        
+        Example format:
+        [ {{"item": "Garlic Bread", "quantity": 1}}, {{"item": "Paneer Tikka", "quantity": 1}} ]
+        
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        
+        cleaned_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+        return json.loads(cleaned_text)
+    except Exception as e:
+        print(f"Error parsing order: {e}")
+        return []
