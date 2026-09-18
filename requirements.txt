@@ -1,2 +1,5 @@
 streamlit
+google-genai
+supabase
 qrcode[pil]
+streamlit-mic-recorder
